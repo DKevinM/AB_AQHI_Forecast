@@ -155,7 +155,37 @@ feature_cols = [
     "TEMP_filled",
     "RH_was_missing",
     "WS_filled",
-    "WD_filled"
+    "WD_filled",
+
+    # Future meteorology proxy
+    "WS_future_1h",
+    "WD_future_1h",
+    "TEMP_future_1h",
+    "RH_future_1h",
+    "U_future_1h",
+    "V_future_1h",
+
+    "WS_future_2h",
+    "WD_future_2h",
+    "TEMP_future_2h",
+    "RH_future_2h",
+    "U_future_2h",
+    "V_future_2h",
+
+    "WS_future_3h",
+    "WD_future_3h",
+    "TEMP_future_3h",
+    "RH_future_3h",
+    "U_future_3h",
+    "V_future_3h",
+
+    "WS_future_6h",
+    "WD_future_6h",
+    "TEMP_future_6h",
+    "RH_future_6h",
+    "U_future_6h",
+    "V_future_6h"
+    
 ]
 
 
