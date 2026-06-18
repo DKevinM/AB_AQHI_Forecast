@@ -48,6 +48,82 @@ jobs:
           du -h data/AB_master.csv.gz || true
           du -h data/training_dataset.csv.gz || true
 
+
+
+      - name: Dataset Diagnostics
+        run: |
+          python - <<EOF
+
+          import pandas as pd
+
+          df = pd.read_csv(
+              "data/training_dataset.csv.gz"
+          )
+
+          print("\n========================")
+          print("TRAINING DATASET SUMMARY")
+          print("========================")
+
+          print("Rows:", len(df))
+          print("Stations:", df["station"].nunique())
+
+          print("\nDate Range:")
+          print(df["datetime"].min())
+          print(df["datetime"].max())
+
+          print("\nAQHI Summary:")
+          print(df["AQHI"].describe())
+
+          print("\nFeature Missing Counts:")
+          print(
+              df[[
+                  "PM25",
+                  "NO2",
+                  "O3",
+                  "TEMP",
+                  "RH",
+                  "WS",
+                  "WD"
+              ]].isna().sum()
+          )
+
+          print("\nTop Stations:")
+          print(
+              df.groupby("station")
+                .size()
+                .sort_values(ascending=False)
+                .head(20)
+          )
+
+          print("\nAQHI Distribution:")
+          print(
+              df["AQHI"]
+              .round()
+              .value_counts()
+              .sort_index()
+          )
+
+          print("\nFill Flags Summary:")
+          fill_cols = [
+              c for c in df.columns
+              if c.endswith("_filled")
+          ]
+
+          if len(fill_cols) > 0:
+              print(
+                  df[fill_cols]
+                  .sum()
+                  .sort_values(ascending=False)
+              )
+
+          print("\n========================")
+          print("END DIAGNOSTICS")
+          print("========================\n")
+
+          EOF
+
+         
+
       - name: Commit Outputs
         run: |
 
