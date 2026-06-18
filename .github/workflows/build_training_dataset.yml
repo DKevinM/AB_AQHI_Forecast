@@ -1,0 +1,63 @@
+name: Build Alberta Training Dataset
+
+on:
+
+  workflow_dispatch:
+
+  push:
+    paths:
+      - "data/*.csv"
+      - "scripts/build_AB_master.py"
+      - "scripts/build_training_dataset_ab.py"
+
+permissions:
+  contents: write
+
+jobs:
+
+  build-training:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy
+
+      - name: Build Alberta Master
+        run: |
+          python scripts/build_AB_master.py
+
+      - name: Build Training Dataset
+        run: |
+          python scripts/build_training_dataset_ab.py
+
+      - name: Show Outputs
+        run: |
+          ls -lh data
+          du -h data/AB_master.csv.gz || true
+          du -h data/training_dataset.csv.gz || true
+
+      - name: Commit Outputs
+        run: |
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add data/AB_master.csv.gz
+          git add data/training_dataset.csv.gz
+          git add data/station_neighbors.csv
+
+          git commit -m "Update Alberta training dataset" || echo "No changes"
+
+          git push
