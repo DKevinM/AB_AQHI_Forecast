@@ -25,17 +25,85 @@ os.makedirs("models", exist_ok=True)
 
 print("Loading training dataset...")
 
-data = pd.read_csv(DATA_FILE)
+data = pd.read_csv(DATA_FILE, compression="gzip")
 
 print("Rows:", len(data))
 print("Columns:", len(data.columns))
 
-data = data.dropna()
-
 data["datetime"] = pd.to_datetime(data["datetime"])
 data = data.sort_values("datetime").reset_index(drop=True)
 
-print("Rows after NA removal:", len(data))
+# -----------------------------------
+# RH MODEL FIELD
+# -----------------------------------
+# Keep original RH, but create RH_model for training.
+# This prevents raw missing RH from killing rows too early.
+
+data["RH_model"] = data["RH"]
+
+# If RH_filled is an actual filled RH value, use it.
+# If RH_filled is only a 0/1 flag, this block will avoid using it as RH.
+if "RH_filled" in data.columns:
+    rh_filled_max = data["RH_filled"].max(skipna=True)
+
+    if rh_filled_max > 1:
+        print("Using RH_filled as filled RH value.")
+        data["RH_model"] = data["RH_model"].fillna(data["RH_filled"])
+    else:
+        print("RH_filled appears to be a flag, not a filled RH value.")
+
+# Flag missing original RH
+data["RH_was_missing"] = data["RH"].isna().astype(int)
+
+print("RH missing before RH_model fill:", data["RH"].isna().sum())
+print("RH_model missing after fill:", data["RH_model"].isna().sum())
+
+
+
+print("Rows before final model drop:", len(data))
+
+from pathlib import Path
+
+DIAG_DIR = Path("diagnostics")
+DIAG_DIR.mkdir(exist_ok=True)
+
+station_counts = (
+    data.groupby("station")
+      .size()
+      .reset_index(name="training_rows")
+      .sort_values("training_rows")
+)
+
+station_counts.to_csv(DIAG_DIR / "station_rows_in_training_dataset.csv", index=False)
+
+print("\nStations in final training dataset:")
+print("Count:", data["station"].nunique())
+print(station_counts.head(20))
+
+
+MASTER_FILE = Path("data/AB_master.csv.gz")
+
+if MASTER_FILE.exists():
+    master = pd.read_csv(MASTER_FILE, compression="gzip", usecols=["station"])
+
+    master_stations = set(master["station"].dropna().unique())
+    training_stations = set(data["station"].dropna().unique())
+
+    removed_stations = sorted(master_stations - training_stations)
+
+    pd.DataFrame({"station": removed_stations}).to_csv(
+        DIAG_DIR / "stations_in_master_but_not_training.csv",
+        index=False
+    )
+
+    print("\nStations in master:", len(master_stations))
+    print("Stations in training:", len(training_stations))
+    print("Stations removed from training:")
+    for s in removed_stations:
+        print(" -", s)
+else:
+    print("\nWARNING: data/AB_master.csv.gz not found, cannot compare removed stations.")
+
 
 # -----------------------------------
 # Feature Columns
@@ -67,7 +135,7 @@ feature_cols = [
     "U",
     "V",
     "TEMP",
-    "RH",
+    "RH_model",
 
     # Time
     "sin_hour",
@@ -85,10 +153,37 @@ feature_cols = [
     "NO2_filled",
     "O3_filled",
     "TEMP_filled",
-    "RH_filled",
+    "RH_was_missing",
     "WS_filled",
     "WD_filled"
 ]
+
+
+
+target_cols = [
+    "AQHI_future_1h",
+    "AQHI_future_2h",
+    "AQHI_future_3h",
+    "AQHI_future_6h"
+]
+
+required_cols = feature_cols + target_cols + ["datetime", "station"]
+
+rows_before_drop = len(data)
+stations_before_drop = data["station"].nunique()
+
+data = data.dropna(subset=required_cols).copy()
+
+
+rows_after_drop = len(data)
+stations_after_drop = data["station"].nunique()
+
+print("Rows before final model drop:", rows_before_drop)
+print("Rows after final model drop :", rows_after_drop)
+print("Rows retained %:", round(100 * rows_after_drop / rows_before_drop, 1))
+print("Stations before final model drop:", stations_before_drop)
+print("Stations after final model drop :", stations_after_drop)
+
 
 X = data[feature_cols]
 
