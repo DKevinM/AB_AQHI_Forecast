@@ -3,9 +3,7 @@ name: Forecast Alberta AQHI
 on:
   workflow_dispatch:
 
-  schedule:
-    # Run hourly at minute 20 UTC
-    - cron: "20 * * * *"
+
 
 permissions:
   contents: write
