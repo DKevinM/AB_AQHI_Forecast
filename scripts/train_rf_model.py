@@ -32,6 +32,9 @@ print("Columns:", len(data.columns))
 
 data = data.dropna()
 
+data["datetime"] = pd.to_datetime(data["datetime"])
+data = data.sort_values("datetime").reset_index(drop=True)
+
 print("Rows after NA removal:", len(data))
 
 # -----------------------------------
@@ -60,6 +63,7 @@ feature_cols = [
 
     # Weather
     "WS",
+    "WD",
     "U",
     "V",
     "TEMP",
@@ -82,7 +86,8 @@ feature_cols = [
     "O3_filled",
     "TEMP_filled",
     "RH_filled",
-    "WS_filled"
+    "WS_filled",
+    "WD_filled"
 ]
 
 X = data[feature_cols]
@@ -115,7 +120,7 @@ def train_model(target, name):
     print("Testing rows :", len(X_test))
 
     model = RandomForestRegressor(
-        n_estimators=200,
+        n_estimators=300,
         max_depth=12,
         min_samples_leaf=10,
         max_features="sqrt",
@@ -132,11 +137,34 @@ def train_model(target, name):
     mae = mean_absolute_error(y_test, pred)
     r2 = r2_score(y_test, pred)
 
+    high4_mask = y_test >= 4
+    high6_mask = y_test >= 6
+    
+    high4_rmse = np.nan
+    high4_mae = np.nan
+    high6_rmse = np.nan
+    high6_mae = np.nan
+    
+    if high4_mask.sum() > 0:
+        high4_rmse = np.sqrt(mean_squared_error(y_test[high4_mask], pred[high4_mask]))
+        high4_mae = mean_absolute_error(y_test[high4_mask], pred[high4_mask])
+    
+    if high6_mask.sum() > 0:
+        high6_rmse = np.sqrt(mean_squared_error(y_test[high6_mask], pred[high6_mask]))
+        high6_mae = mean_absolute_error(y_test[high6_mask], pred[high6_mask])
+
     print("\nResults")
     print("RMSE:", round(rmse, 3))
     print("MAE :", round(mae, 3))
     print("R²  :", round(r2, 3))
     print("OOB :", round(model.oob_score_, 3))
+    print("\nElevated AQHI Metrics")
+    print("AQHI >= 4 count:", int(high4_mask.sum()))
+    print("AQHI >= 4 RMSE :", round(high4_rmse, 3))
+    print("AQHI >= 4 MAE  :", round(high4_mae, 3))
+    print("AQHI >= 6 count:", int(high6_mask.sum()))
+    print("AQHI >= 6 RMSE :", round(high6_rmse, 3))
+    print("AQHI >= 6 MAE  :", round(high6_mae, 3))
 
     # -----------------------------
     # Save model
@@ -184,6 +212,12 @@ def train_model(target, name):
         f.write(f"MAE: {mae}\n")
         f.write(f"R2: {r2}\n")
         f.write(f"OOB: {model.oob_score_}\n")
+        f.write(f"AQHI_GE_4_Count: {int(high4_mask.sum())}\n")
+        f.write(f"AQHI_GE_4_RMSE: {high4_rmse}\n")
+        f.write(f"AQHI_GE_4_MAE: {high4_mae}\n")
+        f.write(f"AQHI_GE_6_Count: {int(high6_mask.sum())}\n")
+        f.write(f"AQHI_GE_6_RMSE: {high6_rmse}\n")
+        f.write(f"AQHI_GE_6_MAE: {high6_mae}\n")
 
     return {
         "RMSE": rmse,
