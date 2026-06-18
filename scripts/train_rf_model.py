@@ -15,7 +15,7 @@ from sklearn.metrics import (
 # CONFIG
 # -----------------------------------
 
-DATA_FILE = "training_dataset.csv.gz"
+DATA_FILE = "/tmp/training_dataset.csv.gz"
 
 os.makedirs("models", exist_ok=True)
 
