@@ -42,11 +42,22 @@ jobs:
         run: |
           python scripts/build_training_dataset_ab.py
 
+
+      - name: Verify Files
+        run: |
+          echo "TMP DIRECTORY"
+          ls -lh /tmp
+
+          echo ""
+          echo "DATA DIRECTORY"
+          ls -lh data
+
+
       - name: Show Outputs
         run: |
           ls -lh data
           du -h data/AB_master.csv.gz || true
-          du -h data/training_dataset.csv.gz || true
+          du -h /tmp/training_dataset.csv.gz || true
 
 
 
@@ -57,7 +68,7 @@ jobs:
           import pandas as pd
 
           df = pd.read_csv(
-              "data/training_dataset.csv.gz"
+              "/tmp/training_dataset.csv.gz"
           )
 
           print("\n========================")
@@ -122,18 +133,4 @@ jobs:
 
           EOF
 
-         
-
-      - name: Commit Outputs
-        run: |
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git add data/AB_master.csv.gz
-          git add data/training_dataset.csv.gz
-          git add data/station_neighbors.csv
-
-          git commit -m "Update Alberta training dataset" || echo "No changes"
-
-          git push
+        
