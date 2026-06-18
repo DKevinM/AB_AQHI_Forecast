@@ -1,0 +1,73 @@
+name: Forecast Alberta AQHI
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Run hourly at minute 20 UTC
+    - cron: "20 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forecast-ab
+  cancel-in-progress: true
+
+jobs:
+  forecast-ab:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests joblib scikit-learn
+
+      - name: Show repo files
+        run: |
+          pwd
+          find . -maxdepth 3 -type f | sort
+
+      - name: Pull latest Alberta observations
+        run: |
+          python scripts/pull_latest_ab_observations.py
+
+      - name: Pull forecast meteorology
+        run: |
+          python scripts/pull_forecast_met_openmeteo.py
+
+      - name: Build forecast features
+        run: |
+          python scripts/build_forecast_features.py
+
+      - name: Predict Alberta AQHI forecast
+        run: |
+          python scripts/predict_ab_forecast.py
+
+      - name: List output files
+        run: |
+          find data -maxdepth 4 -type f | sort
+          find outputs -maxdepth 4 -type f | sort || true
+
+      - name: Commit forecast outputs
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add data/forecast_features/ outputs/ || true
+
+          if git diff --cached --quiet; then
+            echo "No forecast output changes to commit."
+          else
+            git commit -m "Update Alberta AQHI forecast outputs"
+            git push
+          fi
