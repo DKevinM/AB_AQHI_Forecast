@@ -4,7 +4,7 @@ from pathlib import Path
 from math import radians, sin, cos, asin, sqrt
 
 DATA_IN = Path("data/AB_master.csv.gz")
-DATA_OUT = Path("data/training_dataset.csv.gz")
+DATA_OUT = Path("/tmp/training_dataset.csv.gz")
 NEIGHBOR_OUT = Path("data/station_neighbors.csv")
 
 FILL_COLS = ["PM25", "NO2", "O3", "WS", "TEMP", "RH"]
