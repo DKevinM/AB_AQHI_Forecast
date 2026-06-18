@@ -1,4 +1,4 @@
-# buildABmaster.py
+# scripts/build_AB_master.py
 
 import pandas as pd
 import numpy as np
@@ -16,57 +16,36 @@ FILES = {
     "RH":   "RH_c.csv"
 }
 
+STATIONS_FILE = DATA_DIR / "stations.csv"
 
-def load_parameter_file(filepath, parameter):
+
+def load_parameter_file(filepath, parameter, stations_meta):
 
     print(f"Loading {filepath}")
 
-    raw = pd.read_csv(
+    df = pd.read_csv(
         filepath,
-        header=None,
         dtype=str,
         low_memory=False
     )
 
-    # ------------------------------------
-    # Metadata rows
-    # ------------------------------------
-    lats = raw.iloc[0, 1:].values
-    lons = raw.iloc[1, 1:].values
-    stations = raw.iloc[2, 1:].values
-
-    # ------------------------------------
-    # Data section
-    # ------------------------------------
-    data = raw.iloc[3:].copy()
-
-    cols = ["datetime"] + list(stations)
-    data.columns = cols
+    # standardize first column as datetime
+    first_col = df.columns[0]
+    df = df.rename(columns={first_col: "datetime"})
 
     # long format
-    long = data.melt(
+    long = df.melt(
         id_vars="datetime",
         var_name="station",
         value_name=parameter
     )
 
-    # station metadata
-    meta = pd.DataFrame({
-        "station": stations,
-        "lat": pd.to_numeric(lats, errors="coerce"),
-        "lon": pd.to_numeric(lons, errors="coerce")
-    })
-
-    long = long.merge(
-        meta,
-        on="station",
-        how="left"
-    )
+    long["station"] = long["station"].astype(str).str.strip()
 
     # clean values
     long[parameter] = (
         long[parameter]
-        .replace(["S", "", "NA"], np.nan)
+        .replace(["S", "s", "", "NA", "N/A", "nan", "NaN", "null"], np.nan)
     )
 
     long[parameter] = pd.to_numeric(
@@ -79,7 +58,47 @@ def load_parameter_file(filepath, parameter):
         errors="coerce"
     )
 
+    # merge station metadata
+    long = long.merge(
+        stations_meta,
+        on="station",
+        how="left"
+    )
+
+    # warn if station metadata missing
+    missing_meta = long.loc[
+        long["lat"].isna() | long["lon"].isna(),
+        "station"
+    ].dropna().unique()
+
+    if len(missing_meta) > 0:
+        print(f"WARNING: Missing lat/lon for {parameter}:")
+        print(missing_meta)
+
     return long
+
+
+# ------------------------------------
+# Load station metadata
+# ------------------------------------
+stations_meta = pd.read_csv(STATIONS_FILE)
+
+stations_meta.columns = [
+    c.strip().lower() for c in stations_meta.columns
+]
+
+stations_meta = stations_meta.rename(columns={
+    "latitude": "lat",
+    "longitude": "lon",
+    "name": "station",
+    "stationname": "station"
+})
+
+stations_meta["station"] = stations_meta["station"].astype(str).str.strip()
+stations_meta["lat"] = pd.to_numeric(stations_meta["lat"], errors="coerce")
+stations_meta["lon"] = pd.to_numeric(stations_meta["lon"], errors="coerce")
+
+stations_meta = stations_meta[["station", "lat", "lon"]].drop_duplicates()
 
 
 # ------------------------------------
@@ -88,44 +107,45 @@ def load_parameter_file(filepath, parameter):
 dfs = {}
 
 for param, fname in FILES.items():
-
     dfs[param] = load_parameter_file(
         DATA_DIR / fname,
-        param
+        param,
+        stations_meta
     )
+
 
 # ------------------------------------
 # Merge all parameters
 # ------------------------------------
 master = dfs["PM25"]
 
-for param in ["NO2","O3","WS","WD","TEMP","RH"]:
+for param in ["NO2", "O3", "WS", "WD", "TEMP", "RH"]:
 
     master = master.merge(
         dfs[param],
-        on=["datetime","station","lat","lon"],
+        on=["datetime", "station", "lat", "lon"],
         how="outer"
     )
 
-# ------------------------------------
-# Sort
-# ------------------------------------
-master = master.sort_values(
-    ["station","datetime"]
-)
 
 # ------------------------------------
-# Remove completely empty rows
+# Sort and clean
 # ------------------------------------
+master = master.sort_values(["station", "datetime"])
+
+master = master.dropna(subset=["datetime", "station"])
+
+# remove rows with no AQHI pollutant data
 master = master.dropna(
-    subset=["PM25","NO2","O3"],
+    subset=["PM25", "NO2", "O3"],
     how="all"
 )
+
 
 # ------------------------------------
 # Save
 # ------------------------------------
-out = "data/AB_master.csv.gz"
+out = DATA_DIR / "AB_master.csv.gz"
 
 master.to_csv(
     out,
@@ -133,11 +153,26 @@ master.to_csv(
     compression="gzip"
 )
 
+
+# ------------------------------------
+# Diagnostics
+# ------------------------------------
 print(master.head())
 print()
 print(master.columns)
 print()
 print("Rows:", len(master))
 print("Stations:", master["station"].nunique())
+print()
+print("Missing values:")
+print(master.isna().sum())
+print()
+print("AQHI pollutant coverage by station:")
+print(
+    master.groupby("station")[["PM25", "NO2", "O3"]]
+    .count()
+    .sort_values("PM25", ascending=False)
+    .head(20)
+)
 print()
 print("Saved:", out)
