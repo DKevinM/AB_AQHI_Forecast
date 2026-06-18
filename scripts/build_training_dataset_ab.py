@@ -258,6 +258,29 @@ for lag in [1, 2, 3, 6, 12, 24]:
 data["AQHI_change_1h"] = data["AQHI"] - data["AQHI_lag1"]
 data["AQHI_change_3h"] = data["AQHI"] - data["AQHI_lag3"]
 
+
+
+# ------------------------------------------------
+# Future meteorology proxy features
+# ------------------------------------------------
+# These are observed future meteorology values used as a proxy
+# for forecast meteorology during model development.
+# Later, live forecasting will replace these with actual forecast met.
+
+print("Creating future meteorology proxy features...")
+
+future_met_cols = ["WS", "WD", "TEMP", "RH", "U", "V"]
+
+for h in [1, 2, 3, 6]:
+    for col in future_met_cols:
+        data[f"{col}_future_{h}h"] = (
+            data.groupby("station")[col]
+            .shift(-h)
+        )
+
+
+
+
 data = data.reset_index()
 
 # ------------------------------------------------
@@ -269,24 +292,60 @@ required = [
     "AQHI_future_2h",
     "AQHI_future_3h",
     "AQHI_future_6h",
+
     "AQHI_lag1",
     "AQHI_lag2",
     "AQHI_lag3",
     "AQHI_lag6",
     "AQHI_lag12",
     "AQHI_lag24",
+
+    "AQHI_change_1h",
+    "AQHI_change_3h",
+
     "PM25",
     "NO2",
     "O3",
+
     "WS",
     "WD",
     "TEMP",
     "RH",
     "U",
     "V",
+
+    "WS_future_1h",
+    "WD_future_1h",
+    "TEMP_future_1h",
+    "RH_future_1h",
+    "U_future_1h",
+    "V_future_1h",
+
+    "WS_future_2h",
+    "WD_future_2h",
+    "TEMP_future_2h",
+    "RH_future_2h",
+    "U_future_2h",
+    "V_future_2h",
+
+    "WS_future_3h",
+    "WD_future_3h",
+    "TEMP_future_3h",
+    "RH_future_3h",
+    "U_future_3h",
+    "V_future_3h",
+
+    "WS_future_6h",
+    "WD_future_6h",
+    "TEMP_future_6h",
+    "RH_future_6h",
+    "U_future_6h",
+    "V_future_6h",
+
     "lat_norm",
     "lon_norm",
     "dist_center",
+
     "sin_hour",
     "cos_hour",
     "sin_doy",
