@@ -84,12 +84,83 @@ neighbors.to_csv(NEIGHBOR_OUT, index=False)
 
 print("Saved:", NEIGHBOR_OUT)
 
+
+
+# ------------------------------------------------
+# RH donor fill for stations with no RH
+# ------------------------------------------------
+
+print("\nRH coverage by station:")
+
+rh_counts = (
+    data.groupby("station")["RH"]
+    .count()
+    .sort_values()
+)
+
+print(rh_counts.head(20))
+
+zero_rh_stations = rh_counts[rh_counts == 0].index.tolist()
+
+print("\nStations with zero RH:")
+print(zero_rh_stations)
+
+valid_rh_stations = set(
+    rh_counts[rh_counts > 0].index
+)
+
+for station in zero_rh_stations:
+
+    station_neighbors = (
+        neighbors[
+            (neighbors["station"] == station) &
+            (neighbors["neighbor"].isin(valid_rh_stations))
+        ]
+        .sort_values("distance_km")
+    )
+
+    if station_neighbors.empty:
+        print(f"No RH donor found for {station}")
+        continue
+
+    donor = station_neighbors.iloc[0]["neighbor"]
+
+    print(
+        f"Filling RH for {station} "
+        f"from {donor}"
+    )
+
+    donor_rh = (
+        data[data["station"] == donor]
+        [["datetime", "RH"]]
+        .rename(columns={"RH": "RH_donor"})
+    )
+
+    mask = data["station"] == station
+
+    tmp = (
+        data.loc[mask]
+        .merge(
+            donor_rh,
+            on="datetime",
+            how="left"
+        )
+    )
+
+    data.loc[mask, "RH"] = tmp["RH_donor"]
+
+    data.loc[mask, "RH_filled"] = np.where(
+        tmp["RH_donor"].notna(),
+        1,
+        data.loc[mask, "RH_filled"]
+    )
+
+
+
 # ------------------------------------------------
 # Stage 2: spatial fill from two nearest stations
 # ------------------------------------------------
 print("Stage 2: spatial fill from nearest stations...")
-
-wide_index = ["datetime", "station"]
 
 for col in FILL_COLS:
 
@@ -107,9 +178,10 @@ for col in FILL_COLS:
         if station not in wide.columns:
             continue
 
-        station_neighbors = neighbors[
-            neighbors["station"] == station
-        ]
+        station_neighbors = (
+            neighbors[neighbors["station"] == station]
+            .sort_values("distance_km")
+        )
 
         if station_neighbors.empty:
             continue
@@ -158,12 +230,16 @@ for col in FILL_COLS:
     )
 
     still_missing = data[col].isna()
+
     data.loc[still_missing, col] = data.loc[
         still_missing,
         f"{col}_spatial_filled"
     ]
 
     data = data.drop(columns=[f"{col}_spatial_filled"])
+
+
+
 
 # ------------------------------------------------
 # Wind vector features
@@ -354,7 +430,31 @@ required = [
 
 before = len(data)
 
-data = data.dropna(subset=required)
+
+print("\nStations before final drop:")
+print(data["station"].nunique())
+
+station_counts_before = (
+    data.groupby("station")
+    .size()
+    .sort_values()
+)
+
+print(station_counts_before.head(20))
+
+
+tmp = data.dropna(subset=required)
+
+lost_stations = (
+    set(data["station"].unique()) -
+    set(tmp["station"].unique())
+)
+
+print("\nLost stations after final drop:")
+print(sorted(lost_stations))
+
+data = tmp
+
 
 after = len(data)
 
