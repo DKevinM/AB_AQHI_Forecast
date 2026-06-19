@@ -90,7 +90,8 @@ print("Saved:", NEIGHBOR_OUT)
 # RH donor fill for stations with no RH
 # ------------------------------------------------
 
-print("\nRH coverage by station:")
+
+print("\nRH coverage by station before donor fill:")
 
 rh_counts = (
     data.groupby("station")["RH"]
@@ -105,9 +106,7 @@ zero_rh_stations = rh_counts[rh_counts == 0].index.tolist()
 print("\nStations with zero RH:")
 print(zero_rh_stations)
 
-valid_rh_stations = set(
-    rh_counts[rh_counts > 0].index
-)
+valid_rh_stations = set(rh_counts[rh_counts > 0].index)
 
 for station in zero_rh_stations:
 
@@ -125,36 +124,33 @@ for station in zero_rh_stations:
 
     donor = station_neighbors.iloc[0]["neighbor"]
 
-    print(
-        f"Filling RH for {station} "
-        f"from {donor}"
-    )
+    print(f"Filling RH for {station} from {donor}")
 
-    donor_rh = (
-        data[data["station"] == donor]
-        [["datetime", "RH"]]
-        .rename(columns={"RH": "RH_donor"})
+    donor_map = (
+        data.loc[data["station"] == donor, ["datetime", "RH"]]
+        .dropna(subset=["RH"])
+        .drop_duplicates(subset=["datetime"])
+        .set_index("datetime")["RH"]
     )
 
     mask = data["station"] == station
 
-    tmp = (
-        data.loc[mask]
-        .merge(
-            donor_rh,
-            on="datetime",
-            how="left"
-        )
-    )
-
-    data.loc[mask, "RH"] = tmp["RH_donor"]
+    data.loc[mask, "RH"] = data.loc[mask, "datetime"].map(donor_map)
 
     data.loc[mask, "RH_filled"] = np.where(
-        tmp["RH_donor"].notna(),
+        data.loc[mask, "RH"].notna(),
         1,
         data.loc[mask, "RH_filled"]
     )
 
+print("\nRH coverage by station after donor fill:")
+
+print(
+    data.groupby("station")["RH"]
+    .count()
+    .sort_values()
+    .head(20)
+)
 
 
 # ------------------------------------------------
