@@ -50,13 +50,19 @@ jobs:
       - name: Show Model Files
         run: |
           ls -lh models/
+          
+      - name: Create RF Package
+        run: |
+          mkdir deliverable
+
+          cp models/*_model.pkl deliverable/
+          cp models/*metrics.txt deliverable/
+          cp models/model_summary.csv deliverable/
+
+          zip -r alberta_rf_models.zip deliverable/
 
       - name: Upload RF Models
         uses: actions/upload-artifact@v4
         with:
           name: alberta-rf-models
-          path: |
-            models/*.pkl
-            models/*importance.csv
-            models/*metrics.txt
-            models/model_summary.csv
+          path: alberta_rf_models.zip
