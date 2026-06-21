@@ -7,59 +7,76 @@ cat("Loading training dataset...\n")
 
 data <- fread("/tmp/training_dataset.csv.gz")
 
-feature_cols <- c(
-  "AQHI",
-  "AQHI_lag1",
-  "AQHI_lag2",
-  "AQHI_lag3",
-  "AQHI_lag6",
-  "AQHI_lag12",
-  "AQHI_lag24",
-  "AQHI_change_1h",
-  "AQHI_change_3h",
-  "PM25",
-  "NO2",
-  "O3",
-  "WS",
-  "WD",
-  "U",
-  "V",
-  "TEMP",
-  "RH_model",
-  "sin_hour",
-  "cos_hour",
-  "sin_doy",
-  "cos_doy",
-  "lat_norm",
-  "lon_norm",
-  "dist_center",
-  "PM25_filled",
-  "NO2_filled",
-  "O3_filled",
-  "TEMP_filled",
-  "RH_was_missing",
-  "WS_filled",
-  "WD_filled",
-  "WS_future_1h",
-  "WD_future_1h",
-  "TEMP_future_1h",
-  "RH_future_1h",
-  "U_future_1h",
-  "V_future_1h"
-)
+results <- list()
 
-target <- "AQHI_future_1h"
+train_cubist_model <- function(target, name, future_suffix){
+
+cat("\n===================================\n")
+cat("Training:", name, "\n")
+cat("Target:", target, "\n")
+cat("===================================\n")
+
+feature_cols <- c(
+"AQHI",
+"AQHI_lag1",
+"AQHI_lag2",
+"AQHI_lag3",
+"AQHI_lag6",
+"AQHI_lag12",
+"AQHI_lag24",
+
+```
+"AQHI_change_1h",
+"AQHI_change_3h",
+
+"PM25",
+"NO2",
+"O3",
+
+"WS",
+"WD",
+"U",
+"V",
+"TEMP",
+"RH_model",
+
+"sin_hour",
+"cos_hour",
+"sin_doy",
+"cos_doy",
+
+"lat_norm",
+"lon_norm",
+"dist_center",
+
+"PM25_filled",
+"NO2_filled",
+"O3_filled",
+"TEMP_filled",
+"RH_was_missing",
+"WS_filled",
+"WD_filled",
+
+paste0("WS_future_", future_suffix),
+paste0("WD_future_", future_suffix),
+paste0("TEMP_future_", future_suffix),
+paste0("RH_future_", future_suffix),
+paste0("U_future_", future_suffix),
+paste0("V_future_", future_suffix)
+```
+
+)
 
 keep <- c(feature_cols, target)
 
-data <- data[complete.cases(data[, ..keep])]
+d <- data[complete.cases(data[, ..keep])]
 
-cat("Rows:", nrow(data), "\n")
+cat("Rows:", nrow(d), "\n")
 
-split_index <- floor(nrow(data) * 0.80)
+split_index <- floor(nrow(d) * 0.80)
 
-train <- data[1:split_index]
-test  <- data[(split_index+1):nrow(data)]
+train <- d[1:split_index]
+test  <- d[(split_index + 1):nrow(d)]
 
 x_train <- train[, ..feature_cols]
 y_train <- train[[target]]
@@ -67,13 +84,14 @@ y_train <- train[[target]]
 x_test <- test[, ..feature_cols]
 y_test <- test[[target]]
 
-cat("Training Cubist...\n")
+cat("Training rows:", nrow(x_train), "\n")
+cat("Testing rows :", nrow(x_test), "\n")
 
 model <- cubist(
-  x = x_train,
-  y = y_train,
-  committees = 50,
-  neighbors = 9
+x = x_train,
+y = y_train,
+committees = 30,
+neighbors = 5
 )
 
 pred <- predict(model, x_test)
@@ -82,18 +100,95 @@ rmse <- sqrt(mean((pred - y_test)^2))
 mae  <- mean(abs(pred - y_test))
 r2   <- cor(pred, y_test)^2
 
+high4 <- y_test >= 4
+high6 <- y_test >= 6
+
+high4_rmse <- NA
+high4_mae  <- NA
+high6_rmse <- NA
+high6_mae  <- NA
+
+if(sum(high4) > 0){
+high4_rmse <- sqrt(mean((pred[high4] - y_test[high4])^2))
+high4_mae  <- mean(abs(pred[high4] - y_test[high4]))
+}
+
+if(sum(high6) > 0){
+high6_rmse <- sqrt(mean((pred[high6] - y_test[high6])^2))
+high6_mae  <- mean(abs(pred[high6] - y_test[high6]))
+}
+
+cat("\nResults\n")
+cat("RMSE:", round(rmse,3), "\n")
+cat("MAE :", round(mae,3), "\n")
+cat("R²  :", round(r2,3), "\n")
+
 saveRDS(
-  model,
-  "models/aqhi_1h_cubist.rds"
+model,
+paste0("models/", name, "_cubist.rds")
 )
 
 writeLines(
-  c(
-    paste("RMSE:", rmse),
-    paste("MAE:", mae),
-    paste("R2:", r2)
-  ),
-  "models/aqhi_1h_cubist_metrics.txt"
+c(
+paste("Model:", name),
+paste("Rows:", nrow(d)),
+paste("Training Rows:", nrow(x_train)),
+paste("Testing Rows:", nrow(x_test)),
+paste("RMSE:", rmse),
+paste("MAE:", mae),
+paste("R2:", r2),
+paste("AQHI_GE_4_Count:", sum(high4)),
+paste("AQHI_GE_4_RMSE:", high4_rmse),
+paste("AQHI_GE_4_MAE:", high4_mae),
+paste("AQHI_GE_6_Count:", sum(high6)),
+paste("AQHI_GE_6_RMSE:", high6_rmse),
+paste("AQHI_GE_6_MAE:", high6_mae)
+),
+paste0("models/", name, "_cubist_metrics.txt")
 )
 
-cat("Finished\n")
+results[[name]] <<- data.frame(
+Model = name,
+RMSE = rmse,
+MAE = mae,
+R2 = r2,
+AQHI_GE_4_RMSE = high4_rmse,
+AQHI_GE_4_MAE = high4_mae,
+AQHI_GE_6_RMSE = high6_rmse,
+AQHI_GE_6_MAE = high6_mae
+)
+}
+
+train_cubist_model(
+"AQHI_future_1h",
+"aqhi_1h",
+"1h"
+)
+
+train_cubist_model(
+"AQHI_future_2h",
+"aqhi_2h",
+"2h"
+)
+
+train_cubist_model(
+"AQHI_future_3h",
+"aqhi_3h",
+"3h"
+)
+
+summary_df <- do.call(rbind, results)
+
+write.csv(
+summary_df,
+"models/cubist_model_summary.csv",
+row.names = FALSE
+)
+
+cat("\n===================================\n")
+cat("CUBIST MODEL SUMMARY\n")
+cat("===================================\n")
+
+print(summary_df)
+
+cat("\nFinished.\n")
