@@ -54,20 +54,6 @@ cat("RH_model missing:", sum(is.na(data$RH_model)), "\n")
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 cat("Columns loaded:", ncol(data), "\n")
 
 required_cols <- c(
@@ -75,8 +61,8 @@ required_cols <- c(
   "V",
 
   "AQHI_future_1h",
-  "AQHI_future_2h",
-  "AQHI_future_3h",
+#  "AQHI_future_2h",
+#  "AQHI_future_3h",
 
   "WS_future_1h",
   "WD_future_1h",
@@ -277,17 +263,17 @@ train_cubist_model(
 "1h"
 )
 
-train_cubist_model(
-"AQHI_future_2h",
-"aqhi_2h",
-"2h"
-)
+# train_cubist_model(
+# "AQHI_future_2h",
+# "aqhi_2h",
+# "2h"
+# )
 
-train_cubist_model(
-"AQHI_future_3h",
-"aqhi_3h",
-"3h"
-)
+# train_cubist_model(
+# "AQHI_future_3h",
+# "aqhi_3h",
+# "3h"
+# )
 
 summary_df <- do.call(rbind, results)
 
