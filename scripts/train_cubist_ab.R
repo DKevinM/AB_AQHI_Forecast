@@ -7,6 +7,118 @@ cat("Loading training dataset...\n")
 
 data <- fread("/tmp/training_dataset.csv.gz")
 
+
+
+
+
+# -----------------------------------
+# RH MODEL FIELD
+# -----------------------------------
+
+if (!"RH_model" %in% names(data)) {
+
+  cat("Creating RH_model from RH...\n")
+
+  data[, RH_model := RH]
+
+  if ("RH_filled" %in% names(data)) {
+
+    rh_filled_max <- suppressWarnings(
+      max(data$RH_filled, na.rm = TRUE)
+    )
+
+    if (!is.na(rh_filled_max) && rh_filled_max > 1) {
+
+      cat("Using RH_filled as filled RH values.\n")
+
+      data[is.na(RH_model), RH_model := RH_filled]
+
+    } else {
+
+      cat("RH_filled appears to be a flag.\n")
+
+    }
+  }
+}
+
+if (!"RH_was_missing" %in% names(data)) {
+
+  data[, RH_was_missing := 0]
+
+}
+
+cat("RH missing:", sum(is.na(data$RH)), "\n")
+cat("RH_model missing:", sum(is.na(data$RH_model)), "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cat("Columns loaded:", ncol(data), "\n")
+
+required_cols <- c(
+  "U",
+  "V",
+
+  "AQHI_future_1h",
+  "AQHI_future_2h",
+  "AQHI_future_3h",
+
+  "WS_future_1h",
+  "WD_future_1h",
+  "TEMP_future_1h",
+  "RH_future_1h",
+  "U_future_1h",
+  "V_future_1h",
+
+  "WS_future_2h",
+  "WD_future_2h",
+  "TEMP_future_2h",
+  "RH_future_2h",
+  "U_future_2h",
+  "V_future_2h",
+
+  "WS_future_3h",
+  "WD_future_3h",
+  "TEMP_future_3h",
+  "RH_future_3h",
+  "U_future_3h",
+  "V_future_3h"
+)
+
+missing_cols <- setdiff(
+  required_cols,
+  names(data)
+)
+
+
+if(length(missing_cols) > 0){
+  stop(
+    paste(
+      "Missing columns:",
+      paste(missing_cols, collapse=", ")
+    )
+  )
+}
+
+
+
+
+
 results <- list()
 
 train_cubist_model <- function(target, name, future_suffix){
@@ -25,7 +137,7 @@ feature_cols <- c(
 "AQHI_lag12",
 "AQHI_lag24",
 
-```
+
 "AQHI_change_1h",
 "AQHI_change_3h",
 
@@ -63,7 +175,7 @@ paste0("TEMP_future_", future_suffix),
 paste0("RH_future_", future_suffix),
 paste0("U_future_", future_suffix),
 paste0("V_future_", future_suffix)
-```
+
 
 )
 
