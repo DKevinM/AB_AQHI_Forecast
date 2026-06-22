@@ -32,7 +32,7 @@ jobs:
     
       - name: Install R Packages
         run: |
-          Rscript -e 'install.packages(c("data.table","Cubist"), repos="https://cloud.r-project.org")'
+          Rscript -e 'install.packages(c("data.table","Cubist","R.utils"), repos="https://cloud.r-project.org")'
     
       - name: Build Alberta Master
         run: |
