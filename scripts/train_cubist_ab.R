@@ -60,23 +60,7 @@ required_cols <- c(
   "U",
   "V",
 
-  "AQHI_future_1h",
-#  "AQHI_future_2h",
-#  "AQHI_future_3h",
-
-  "WS_future_1h",
-  "WD_future_1h",
-  "TEMP_future_1h",
-  "RH_future_1h",
-  "U_future_1h",
-  "V_future_1h",
-
-  "WS_future_2h",
-  "WD_future_2h",
-  "TEMP_future_2h",
-  "RH_future_2h",
-  "U_future_2h",
-  "V_future_2h",
+  "AQHI_future_3h",
 
   "WS_future_3h",
   "WD_future_3h",
@@ -258,22 +242,10 @@ AQHI_GE_6_MAE = high6_mae
 }
 
 train_cubist_model(
-"AQHI_future_1h",
-"aqhi_1h",
-"1h"
+"AQHI_future_3h",
+"aqhi_3h",
+"3h"
 )
-
-# train_cubist_model(
-# "AQHI_future_2h",
-# "aqhi_2h",
-# "2h"
-# )
-
-# train_cubist_model(
-# "AQHI_future_3h",
-# "aqhi_3h",
-# "3h"
-# )
 
 summary_df <- do.call(rbind, results)
 
