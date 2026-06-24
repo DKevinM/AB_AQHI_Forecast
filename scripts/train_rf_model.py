@@ -1,8 +1,9 @@
-
 import pandas as pd
 import numpy as np
 import os
 import joblib
+
+from pathlib import Path
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import (
@@ -18,6 +19,9 @@ from sklearn.metrics import (
 DATA_FILE = "/tmp/training_dataset.csv.gz"
 
 os.makedirs("models", exist_ok=True)
+
+DIAG_DIR = Path("diagnostics")
+DIAG_DIR.mkdir(exist_ok=True)
 
 # -----------------------------------
 # Load Dataset
@@ -36,13 +40,9 @@ data = data.sort_values("datetime").reset_index(drop=True)
 # -----------------------------------
 # RH MODEL FIELD
 # -----------------------------------
-# Keep original RH, but create RH_model for training.
-# This prevents raw missing RH from killing rows too early.
 
 data["RH_model"] = data["RH"]
 
-# If RH_filled is an actual filled RH value, use it.
-# If RH_filled is only a 0/1 flag, this block will avoid using it as RH.
 if "RH_filled" in data.columns:
     rh_filled_max = data["RH_filled"].max(skipna=True)
 
@@ -52,20 +52,16 @@ if "RH_filled" in data.columns:
     else:
         print("RH_filled appears to be a flag, not a filled RH value.")
 
-# Flag missing original RH
 data["RH_was_missing"] = data["RH"].isna().astype(int)
 
 print("RH missing before RH_model fill:", data["RH"].isna().sum())
 print("RH_model missing after fill:", data["RH_model"].isna().sum())
 
-
+# -----------------------------------
+# Diagnostics before final drop
+# -----------------------------------
 
 print("Rows before final model drop:", len(data))
-
-from pathlib import Path
-
-DIAG_DIR = Path("diagnostics")
-DIAG_DIR.mkdir(exist_ok=True)
 
 station_counts = (
     data.groupby("station")
@@ -74,17 +70,23 @@ station_counts = (
       .sort_values("training_rows")
 )
 
-station_counts.to_csv(DIAG_DIR / "station_rows_in_training_dataset.csv", index=False)
+station_counts.to_csv(
+    DIAG_DIR / "station_rows_in_training_dataset.csv",
+    index=False
+)
 
-print("\nStations in final training dataset:")
+print("\nStations in raw training dataset:")
 print("Count:", data["station"].nunique())
 print(station_counts.head(20))
-
 
 MASTER_FILE = Path("data/AB_master.csv.gz")
 
 if MASTER_FILE.exists():
-    master = pd.read_csv(MASTER_FILE, compression="gzip", usecols=["station"])
+    master = pd.read_csv(
+        MASTER_FILE,
+        compression="gzip",
+        usecols=["station"]
+    )
 
     master_stations = set(master["station"].dropna().unique())
     training_stations = set(data["station"].dropna().unique())
@@ -97,16 +99,15 @@ if MASTER_FILE.exists():
     )
 
     print("\nStations in master:", len(master_stations))
-    print("Stations in training:", len(training_stations))
-    print("Stations removed from training:")
+    print("Stations in training before final drop:", len(training_stations))
+    print("Stations missing from training before final drop:")
     for s in removed_stations:
         print(" -", s)
 else:
     print("\nWARNING: data/AB_master.csv.gz not found, cannot compare removed stations.")
 
-
 # -----------------------------------
-# Feature Columns
+# Feature Columns - 3H ONLY
 # -----------------------------------
 
 feature_cols = [
@@ -129,7 +130,7 @@ feature_cols = [
     "NO2",
     "O3",
 
-    # Weather
+    # Current weather
     "WS",
     "WD",
     "U",
@@ -157,230 +158,224 @@ feature_cols = [
     "WS_filled",
     "WD_filled",
 
-    # Future meteorology proxy
-    "WS_future_1h",
-    "WD_future_1h",
-    "TEMP_future_1h",
-    "RH_future_1h",
-    "U_future_1h",
-    "V_future_1h",
-
-    "WS_future_2h",
-    "WD_future_2h",
-    "TEMP_future_2h",
-    "RH_future_2h",
-    "U_future_2h",
-    "V_future_2h",
-
+    # 3-hour future meteorology proxy
     "WS_future_3h",
     "WD_future_3h",
     "TEMP_future_3h",
     "RH_future_3h",
     "U_future_3h",
-    "V_future_3h",
-
-    "WS_future_6h",
-    "WD_future_6h",
-    "TEMP_future_6h",
-    "RH_future_6h",
-    "U_future_6h",
-    "V_future_6h"
-    
+    "V_future_3h"
 ]
 
+target_col = "AQHI_future_3h"
 
+required_cols = feature_cols + [target_col, "datetime", "station"]
 
-target_cols = [
-    "AQHI_future_1h",
-    "AQHI_future_2h",
-    "AQHI_future_3h",
-    "AQHI_future_6h"
-]
+missing_cols = [c for c in required_cols if c not in data.columns]
 
-required_cols = feature_cols + target_cols + ["datetime", "station"]
+if missing_cols:
+    raise ValueError(
+        "Missing required columns: " + ", ".join(missing_cols)
+    )
+
+# -----------------------------------
+# Final Drop
+# -----------------------------------
 
 rows_before_drop = len(data)
 stations_before_drop = data["station"].nunique()
 
 data = data.dropna(subset=required_cols).copy()
 
-
 rows_after_drop = len(data)
 stations_after_drop = data["station"].nunique()
 
-print("Rows before final model drop:", rows_before_drop)
+print("\nRows before final model drop:", rows_before_drop)
 print("Rows after final model drop :", rows_after_drop)
 print("Rows retained %:", round(100 * rows_after_drop / rows_before_drop, 1))
 print("Stations before final model drop:", stations_before_drop)
 print("Stations after final model drop :", stations_after_drop)
 
+station_counts_final = (
+    data.groupby("station")
+      .size()
+      .reset_index(name="training_rows")
+      .sort_values("training_rows")
+)
+
+station_counts_final.to_csv(
+    DIAG_DIR / "station_rows_after_final_rf_3h_drop.csv",
+    index=False
+)
+
+# -----------------------------------
+# X / y
+# -----------------------------------
 
 X = data[feature_cols]
+y = data[target_col]
 
 print("\nFeature count:", len(feature_cols))
 print(feature_cols)
 
 # -----------------------------------
-# Train Function
+# Train 3H Model
 # -----------------------------------
 
-def train_model(target, name):
+print("\n===================================")
+print("Training: aqhi_3h")
+print("Target:", target_col)
+print("===================================\n")
 
-    print("\n===================================")
-    print("Training:", name)
-    print("Target:", target)
-    print("===================================\n")
+split_index = int(len(X) * 0.80)
 
-    y = data[target]
+X_train = X.iloc[:split_index]
+X_test = X.iloc[split_index:]
 
-    split_index = int(len(X) * 0.80)
+y_train = y.iloc[:split_index]
+y_test = y.iloc[split_index:]
 
-    X_train = X.iloc[:split_index]
-    X_test = X.iloc[split_index:]
+print("Training rows:", len(X_train))
+print("Testing rows :", len(X_test))
 
-    y_train = y.iloc[:split_index]
-    y_test = y.iloc[split_index:]
+model = RandomForestRegressor(
+    n_estimators=300,
+    max_depth=12,
+    min_samples_leaf=10,
+    max_features="sqrt",
+    oob_score=True,
+    n_jobs=-1,
+    random_state=42
+)
 
-    print("Training rows:", len(X_train))
-    print("Testing rows :", len(X_test))
+model.fit(X_train, y_train)
 
-    model = RandomForestRegressor(
-        n_estimators=300,
-        max_depth=12,
-        min_samples_leaf=10,
-        max_features="sqrt",
-        oob_score=True,
-        n_jobs=-1,
-        random_state=42
+pred = model.predict(X_test)
+
+rmse = np.sqrt(mean_squared_error(y_test, pred))
+mae = mean_absolute_error(y_test, pred)
+r2 = r2_score(y_test, pred)
+
+high4_mask = y_test >= 4
+high6_mask = y_test >= 6
+
+high4_rmse = np.nan
+high4_mae = np.nan
+high6_rmse = np.nan
+high6_mae = np.nan
+
+if high4_mask.sum() > 0:
+    high4_rmse = np.sqrt(
+        mean_squared_error(
+            y_test[high4_mask],
+            pred[high4_mask]
+        )
+    )
+    high4_mae = mean_absolute_error(
+        y_test[high4_mask],
+        pred[high4_mask]
     )
 
-    model.fit(X_train, y_train)
-
-    pred = model.predict(X_test)
-
-    rmse = np.sqrt(mean_squared_error(y_test, pred))
-    mae = mean_absolute_error(y_test, pred)
-    r2 = r2_score(y_test, pred)
-
-    high4_mask = y_test >= 4
-    high6_mask = y_test >= 6
-    
-    high4_rmse = np.nan
-    high4_mae = np.nan
-    high6_rmse = np.nan
-    high6_mae = np.nan
-    
-    if high4_mask.sum() > 0:
-        high4_rmse = np.sqrt(mean_squared_error(y_test[high4_mask], pred[high4_mask]))
-        high4_mae = mean_absolute_error(y_test[high4_mask], pred[high4_mask])
-    
-    if high6_mask.sum() > 0:
-        high6_rmse = np.sqrt(mean_squared_error(y_test[high6_mask], pred[high6_mask]))
-        high6_mae = mean_absolute_error(y_test[high6_mask], pred[high6_mask])
-
-    print("\nResults")
-    print("RMSE:", round(rmse, 3))
-    print("MAE :", round(mae, 3))
-    print("R²  :", round(r2, 3))
-    print("OOB :", round(model.oob_score_, 3))
-    print("\nElevated AQHI Metrics")
-    print("AQHI >= 4 count:", int(high4_mask.sum()))
-    print("AQHI >= 4 RMSE :", round(high4_rmse, 3))
-    print("AQHI >= 4 MAE  :", round(high4_mae, 3))
-    print("AQHI >= 6 count:", int(high6_mask.sum()))
-    print("AQHI >= 6 RMSE :", round(high6_rmse, 3))
-    print("AQHI >= 6 MAE  :", round(high6_mae, 3))
-
-    # -----------------------------
-    # Save model
-    # -----------------------------
-
-    model_file = f"models/{name}_model.pkl"
-
-    joblib.dump(
-        model,
-        model_file
+if high6_mask.sum() > 0:
+    high6_rmse = np.sqrt(
+        mean_squared_error(
+            y_test[high6_mask],
+            pred[high6_mask]
+        )
+    )
+    high6_mae = mean_absolute_error(
+        y_test[high6_mask],
+        pred[high6_mask]
     )
 
-    print("Saved:", model_file)
+print("\nResults")
+print("RMSE:", round(rmse, 3))
+print("MAE :", round(mae, 3))
+print("R²  :", round(r2, 3))
+print("OOB :", round(model.oob_score_, 3))
 
-    # -----------------------------
-    # Feature importance
-    # -----------------------------
-
-    importance = pd.Series(
-        model.feature_importances_,
-        index=feature_cols
-    ).sort_values(ascending=False)
-
-    importance.to_csv(
-        f"models/{name}_importance.csv"
-    )
-
-    print("\nTop 20 Features")
-    print(importance.head(20))
-
-    # -----------------------------
-    # Metrics file
-    # -----------------------------
-
-    with open(
-        f"models/{name}_metrics.txt",
-        "w"
-    ) as f:
-
-        f.write(f"Model: {name}\n")
-        f.write(f"Rows: {len(X)}\n")
-        f.write(f"Training Rows: {len(X_train)}\n")
-        f.write(f"Testing Rows: {len(X_test)}\n")
-        f.write(f"RMSE: {rmse}\n")
-        f.write(f"MAE: {mae}\n")
-        f.write(f"R2: {r2}\n")
-        f.write(f"OOB: {model.oob_score_}\n")
-        f.write(f"AQHI_GE_4_Count: {int(high4_mask.sum())}\n")
-        f.write(f"AQHI_GE_4_RMSE: {high4_rmse}\n")
-        f.write(f"AQHI_GE_4_MAE: {high4_mae}\n")
-        f.write(f"AQHI_GE_6_Count: {int(high6_mask.sum())}\n")
-        f.write(f"AQHI_GE_6_RMSE: {high6_rmse}\n")
-        f.write(f"AQHI_GE_6_MAE: {high6_mae}\n")
-
-    return {
-        "RMSE": rmse,
-        "MAE": mae,
-        "R2": r2
-    }
+print("\nElevated AQHI Metrics")
+print("AQHI >= 4 count:", int(high4_mask.sum()))
+print("AQHI >= 4 RMSE :", round(high4_rmse, 3))
+print("AQHI >= 4 MAE  :", round(high4_mae, 3))
+print("AQHI >= 6 count:", int(high6_mask.sum()))
+print("AQHI >= 6 RMSE :", round(high6_rmse, 3))
+print("AQHI >= 6 MAE  :", round(high6_mae, 3))
 
 # -----------------------------------
-# Train Models
+# Save model
 # -----------------------------------
 
-results = {}
+model_name = "aqhi_3h"
 
-results["1h"] = train_model(
-    "AQHI_future_1h",
-    "aqhi_1h"
+model_file = f"models/{model_name}_model.pkl"
+
+joblib.dump(
+    model,
+    model_file
 )
 
-results["2h"] = train_model(
-    "AQHI_future_2h",
-    "aqhi_2h"
+print("Saved:", model_file)
+
+# -----------------------------------
+# Feature importance
+# -----------------------------------
+
+importance = pd.Series(
+    model.feature_importances_,
+    index=feature_cols
+).sort_values(ascending=False)
+
+importance.to_csv(
+    f"models/{model_name}_importance.csv"
 )
 
-results["3h"] = train_model(
-    "AQHI_future_3h",
-    "aqhi_3h"
-)
+print("\nTop 20 Features")
+print(importance.head(20))
 
-results["6h"] = train_model(
-    "AQHI_future_6h",
-    "aqhi_6h"
-)
+# -----------------------------------
+# Metrics file
+# -----------------------------------
+
+with open(
+    f"models/{model_name}_metrics.txt",
+    "w"
+) as f:
+
+    f.write(f"Model: {model_name}\n")
+    f.write(f"Rows: {len(X)}\n")
+    f.write(f"Training Rows: {len(X_train)}\n")
+    f.write(f"Testing Rows: {len(X_test)}\n")
+    f.write(f"RMSE: {rmse}\n")
+    f.write(f"MAE: {mae}\n")
+    f.write(f"R2: {r2}\n")
+    f.write(f"OOB: {model.oob_score_}\n")
+    f.write(f"AQHI_GE_4_Count: {int(high4_mask.sum())}\n")
+    f.write(f"AQHI_GE_4_RMSE: {high4_rmse}\n")
+    f.write(f"AQHI_GE_4_MAE: {high4_mae}\n")
+    f.write(f"AQHI_GE_6_Count: {int(high6_mask.sum())}\n")
+    f.write(f"AQHI_GE_6_RMSE: {high6_rmse}\n")
+    f.write(f"AQHI_GE_6_MAE: {high6_mae}\n")
 
 # -----------------------------------
 # Summary
 # -----------------------------------
 
-summary = pd.DataFrame(results).T
+summary = pd.DataFrame(
+    {
+        "RMSE": [rmse],
+        "MAE": [mae],
+        "R2": [r2],
+        "OOB": [model.oob_score_],
+        "AQHI_GE_4_Count": [int(high4_mask.sum())],
+        "AQHI_GE_4_RMSE": [high4_rmse],
+        "AQHI_GE_4_MAE": [high4_mae],
+        "AQHI_GE_6_Count": [int(high6_mask.sum())],
+        "AQHI_GE_6_RMSE": [high6_rmse],
+        "AQHI_GE_6_MAE": [high6_mae]
+    },
+    index=[model_name]
+)
 
 summary.to_csv(
     "models/model_summary.csv"
@@ -393,4 +388,3 @@ print("===================================\n")
 print(summary)
 
 print("\nFinished.")
-
